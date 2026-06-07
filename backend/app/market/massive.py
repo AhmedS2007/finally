@@ -103,13 +103,13 @@ class MassiveClient:
 
 def _extract_price(result: dict) -> float | None:
     lt = result.get("last_trade") or {}
-    if lt.get("price"):
+    if lt.get("price") is not None:
         return float(lt["price"])
     session = result.get("session") or {}
-    if session.get("close"):
+    if session.get("close") is not None:
         return float(session["close"])
     q = result.get("last_quote") or {}
-    if q.get("bid") and q.get("ask"):
+    if q.get("bid") is not None and q.get("ask") is not None:
         return (float(q["bid"]) + float(q["ask"])) / 2.0
     return None
 

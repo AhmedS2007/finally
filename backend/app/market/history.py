@@ -25,6 +25,10 @@ class HistoryBuffer:
     def has(self, ticker: str) -> bool:
         return bool(self._buf.get(ticker.upper()))
 
+    def remove(self, ticker: str) -> None:
+        """Drop a ticker's buffered history (e.g. on watchlist removal)."""
+        self._buf.pop(ticker.upper(), None)
+
     def prime(self, ticker: str, points: list[tuple[float, float]]) -> None:
         """Seed the buffer with backfill points so the first chart render is rich."""
         dq = self._buf[ticker.upper()]

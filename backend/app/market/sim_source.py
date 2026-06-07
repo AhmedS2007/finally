@@ -14,8 +14,22 @@ VOL_SCALE = 8.0
 class SimulatedSource(MarketSource):
     """GBM-based price simulator. Default source when no MASSIVE_API_KEY is set."""
 
-    def __init__(self, seed: int | None = None, tick_interval: float = 0.5) -> None:
+    def __init__(
+        self,
+        seed: int | None = None,
+        tick_interval: float = 0.5,
+        *,
+        enable_events: bool = True,
+        round_digits: int | None = 2,
+    ) -> None:
         self.tick_interval = tick_interval
+        # enable_events / round_digits are demo knobs. They default to the lively,
+        # display-friendly behavior (dramatic jumps + cent rounding) but can be
+        # turned off to recover pure GBM statistics — e.g. for the statistical tests,
+        # where the rare 2-5% events and sub-cent quantization otherwise dominate the
+        # tiny per-tick variance.
+        self._enable_events = enable_events
+        self._round_digits = round_digits
         self._rng = random.Random(seed)
         self._params: dict[str, TickerParams] = dict(SEED)
         self._price: dict[str, float] = {t: p.seed_price for t, p in SEED.items()}
@@ -56,7 +70,9 @@ class SimulatedSource(MarketSource):
             shock_term = sigma * math.sqrt(dt) * z
             new_price = self._price[t] * math.exp(drift_term + shock_term)
             new_price *= self._maybe_event()
-            new_price = max(0.01, round(new_price, 2))
+            if self._round_digits is not None:
+                new_price = round(new_price, self._round_digits)
+            new_price = max(0.01, new_price)
             self._price[t] = new_price
             out[t] = new_price
         return out
@@ -93,6 +109,8 @@ class SimulatedSource(MarketSource):
                 + ((1 - w_m - w_s) ** 0.5) * z_idio)
 
     def _maybe_event(self) -> float:
+        if not self._enable_events:
+            return 1.0
         if self._rng.random() < 0.002:
             mag = self._rng.uniform(0.02, 0.05)
             return 1.0 + (mag if self._rng.random() < 0.5 else -mag)

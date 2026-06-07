@@ -11,6 +11,7 @@ class _Entry:
     previous: float
     reference: float
     ts: float
+    ref_seeded: bool = False   # True once an explicit baseline (e.g. prev close) is set
 
 
 class PriceCache:
@@ -46,11 +47,26 @@ class PriceCache:
         return PriceUpdate(ticker, price, prev, now, direction)
 
     def seed_reference(self, ticker: str, reference: float) -> None:
-        """Pre-set a reference baseline before the first tick."""
+        """Set an explicit 'Chg %' baseline (e.g. prior close) for a ticker.
+
+        Authoritative over an auto reference: if a driver tick already created the
+        entry (reference == first price), this still overrides it. But it never
+        clobbers a reference that was previously seeded explicitly, so re-adding an
+        already-tracked ticker won't silently reset its baseline.
+        """
         ticker = ticker.upper()
-        if ticker not in self._data:
+        entry = self._data.get(ticker)
+        if entry is None:
             self._data[ticker] = _Entry(price=reference, previous=reference,
-                                        reference=reference, ts=time.time())
+                                        reference=reference, ts=time.time(),
+                                        ref_seeded=True)
+        elif not entry.ref_seeded:
+            entry.reference = reference
+            entry.ref_seeded = True
+
+    def remove(self, ticker: str) -> bool:
+        """Drop a ticker from the cache (e.g. on watchlist removal). Returns True if present."""
+        return self._data.pop(ticker.upper(), None) is not None
 
     def get(self, ticker: str) -> _Entry | None:
         return self._data.get(ticker.upper())

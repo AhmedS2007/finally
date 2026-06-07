@@ -58,4 +58,11 @@ async def _merge_with_heartbeat(updates, interval: float):
             else:
                 yield None
     finally:
+        # Cancel the in-flight __anext__ and wait for it to settle before returning,
+        # so the caller's subsequent updates.aclose() can't race a still-running task
+        # ("async generator is already running").
         pending.cancel()
+        try:
+            await pending
+        except (asyncio.CancelledError, StopAsyncIteration):
+            pass

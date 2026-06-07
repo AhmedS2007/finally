@@ -63,6 +63,16 @@ def test_ticker_uppercased():
     assert buf.points("aapl") == buf.points("AAPL")
 
 
+def test_remove_drops_history():
+    buf = HistoryBuffer()
+    buf.append("AAPL", 1.0, 190.0)
+    assert buf.has("AAPL")
+    buf.remove("aapl")
+    assert not buf.has("AAPL")
+    assert buf.points("AAPL") == []
+    buf.remove("AAPL")  # idempotent, no error
+
+
 def test_separate_tickers_independent():
     buf = HistoryBuffer()
     buf.append("AAPL", 1.0, 190.0)

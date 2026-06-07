@@ -3,7 +3,7 @@ import asyncio
 import time
 from typing import AsyncGenerator, Callable
 
-from .base import MarketSource, SymbolError
+from .base import MarketSource
 from .cache import PriceCache
 from .history import HistoryBuffer
 from .types import PriceUpdate
@@ -92,6 +92,15 @@ class MarketDataService:
         ref = await ref_fn(ticker)
         if ref is not None:
             self._cache.seed_reference(ticker, ref)
+
+    def remove_ticker(self, ticker: str) -> None:
+        """Evict a ticker from the cache and history (on watchlist removal).
+
+        Without this, a removed ticker would linger in the cache forever and be
+        re-emitted in the full snapshot on every reconnect.
+        """
+        self._cache.remove(ticker)
+        self._history.remove(ticker)
 
     async def get_history(self, ticker: str) -> list[tuple[float, float]]:
         local = self._history.points(ticker)
