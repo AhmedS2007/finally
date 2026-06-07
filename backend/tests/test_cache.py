@@ -92,12 +92,32 @@ def test_seed_reference_sets_baseline_before_tick():
     assert entry.reference == 188.0
 
 
-def test_seed_reference_noop_if_ticker_already_exists():
+def test_seed_reference_overrides_auto_reference():
+    """An explicit baseline wins over the auto reference set on first sight,
+    so a driver tick that lands before seeding doesn't lose the prev-close baseline."""
     cache = PriceCache()
-    cache.set("AAPL", 190.0)
+    cache.set("AAPL", 190.0)           # auto reference = 190 (ref_seeded=False)
     cache.seed_reference("AAPL", 100.0)
     entry = cache.get("AAPL")
-    assert entry.reference == 190.0
+    assert entry.reference == 100.0
+    assert entry.price == 190.0        # latest price untouched
+
+
+def test_seed_reference_noop_if_already_seeded():
+    """Re-seeding never clobbers a baseline that was already set explicitly."""
+    cache = PriceCache()
+    cache.seed_reference("AAPL", 188.0)
+    cache.seed_reference("AAPL", 100.0)
+    entry = cache.get("AAPL")
+    assert entry.reference == 188.0
+
+
+def test_remove_drops_ticker():
+    cache = PriceCache()
+    cache.set("AAPL", 190.0)
+    assert cache.remove("aapl") is True
+    assert cache.get("AAPL") is None
+    assert cache.remove("AAPL") is False
 
 
 def test_snapshot_updates_returns_all_known_tickers():

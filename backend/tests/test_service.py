@@ -86,6 +86,21 @@ async def test_subscribe_first_yield_is_snapshot():
         await service.stop()
 
 
+async def _drain_prices(gen, ticker, *, timeout=1.0):
+    """Collect every price broadcast for `ticker` until the stream goes idle.
+
+    Each change is a discrete event, so the first-sight FLAT update arrives as its
+    own batch before any later change — callers must drain rather than read one batch.
+    """
+    seen: list[float] = []
+    while True:
+        try:
+            batch = await asyncio.wait_for(gen.__anext__(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return seen
+        seen.extend(u.price for u in batch if u.ticker == ticker)
+
+
 @pytest.mark.asyncio
 async def test_driver_loop_broadcasts_on_change():
     prices = [{"AAPL": 190.0}, {"AAPL": 191.0}]
@@ -94,12 +109,10 @@ async def test_driver_loop_broadcasts_on_change():
     await service.start()
 
     gen = service.subscribe()
-    snapshot = await gen.__anext__()
+    await gen.__anext__()  # snapshot
 
-    await asyncio.sleep(0.05)
-    updates = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-    assert any(u.ticker == "AAPL" for u in updates)
-    assert any(u.price == 191.0 for u in updates)
+    seen = await _drain_prices(gen, "AAPL", timeout=0.2)
+    assert 191.0 in seen
 
     await gen.aclose()
     await service.stop()
@@ -115,8 +128,12 @@ async def test_driver_loop_no_broadcast_on_unchanged_price():
     gen = service.subscribe()
     await gen.__anext__()  # snapshot
 
-    updates = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-    assert all(u.price == 191.0 for u in updates)
+    seen = await _drain_prices(gen, "AAPL", timeout=0.2)
+    # Only two distinct broadcasts: the first-sight 190 and the change to 191.
+    # The two repeated 190 ticks must not produce extra events.
+    assert seen.count(190.0) == 1
+    assert seen.count(191.0) == 1
+    assert seen == [190.0, 191.0]
 
     await gen.aclose()
     await service.stop()
@@ -224,6 +241,24 @@ async def test_maybe_seed_reference_noop_for_simulator_like_source():
 
 
 @pytest.mark.asyncio
+async def test_remove_ticker_evicts_cache_and_history():
+    source = FakeSource([{"AAPL": 190.0}])
+    service = make_service(source, ["AAPL"])
+    await service.start()
+    await asyncio.sleep(0.05)
+
+    assert service._cache.get("AAPL") is not None
+    assert service._history.has("AAPL")
+
+    service.remove_ticker("aapl")
+    assert service._cache.get("AAPL") is None
+    assert not service._history.has("AAPL")
+    assert "AAPL" not in service.current_snapshot()
+
+    await service.stop()
+
+
+@pytest.mark.asyncio
 async def test_current_snapshot_returns_dict():
     source = FakeSource([{"AAPL": 190.0}])
     service = make_service(source, ["AAPL"])
@@ -266,15 +301,13 @@ async def test_multiple_subscribers():
     gen1 = service.subscribe()
     gen2 = service.subscribe()
 
-    s1 = await gen1.__anext__()
-    s2 = await gen2.__anext__()
+    await gen1.__anext__()  # snapshot
+    await gen2.__anext__()  # snapshot
 
-    await asyncio.sleep(0.05)
-
-    u1 = await asyncio.wait_for(gen1.__anext__(), timeout=1.0)
-    u2 = await asyncio.wait_for(gen2.__anext__(), timeout=1.0)
-    assert any(u.price == 191.0 for u in u1)
-    assert any(u.price == 191.0 for u in u2)
+    seen1 = await _drain_prices(gen1, "AAPL", timeout=0.2)
+    seen2 = await _drain_prices(gen2, "AAPL", timeout=0.2)
+    assert 191.0 in seen1
+    assert 191.0 in seen2
 
     await gen1.aclose()
     await gen2.aclose()

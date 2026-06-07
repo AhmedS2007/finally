@@ -104,8 +104,13 @@ async def test_synth_history_empty_for_unknown(sim):
 
 @pytest.mark.asyncio
 async def test_gbm_statistical_validity():
-    """With VOL_SCALE=1 and many ticks, mean/std of log-returns within tolerance."""
-    sim = SimulatedSource(seed=0)
+    """With VOL_SCALE=1 and many ticks, mean/std of log-returns within tolerance.
+
+    Events and cent-rounding are disabled here: at VOL_SCALE=1 the per-tick GBM move
+    is sub-cent, so the rare 2-5% events and 0.01 rounding would otherwise dominate
+    the statistics. Both are demo knobs, off here to test the underlying GBM.
+    """
+    sim = SimulatedSource(seed=0, enable_events=False, round_digits=None)
 
     # Monkey-patch VOL_SCALE temporarily
     import app.market.sim_source as ss
@@ -141,8 +146,12 @@ async def test_gbm_statistical_validity():
 
 @pytest.mark.asyncio
 async def test_sector_correlation():
-    """Same-sector tickers have positively correlated returns over many ticks."""
-    sim = SimulatedSource(seed=99)
+    """Same-sector tickers have positively correlated returns over many ticks.
+
+    Events are disabled: they are large, per-ticker idiosyncratic jumps whose variance
+    swamps the small correlated GBM move, masking the sector co-movement under test.
+    """
+    sim = SimulatedSource(seed=99, enable_events=False)
     tech_tickers = ["AAPL", "GOOGL", "MSFT"]
     n = 500
 
@@ -176,3 +185,37 @@ async def test_prices_never_go_non_positive(sim):
     for _ in range(100):
         prices = await sim.fetch_prices(tickers)
         assert all(p > 0 for p in prices.values())
+
+
+@pytest.mark.asyncio
+async def test_events_disabled_produces_no_large_jumps():
+    """With events off, no single tick should move a price by >=2%."""
+    sim = SimulatedSource(seed=7, enable_events=False)
+    tickers = ["AAPL"]
+    prev = sim._price["AAPL"]
+    for _ in range(2000):
+        p = await sim.fetch_prices(tickers)
+        move = abs(p["AAPL"] / prev - 1.0)
+        assert move < 0.02, f"unexpected jump of {move:.4f} with events disabled"
+        prev = p["AAPL"]
+
+
+@pytest.mark.asyncio
+async def test_round_digits_none_allows_subcent_prices():
+    """round_digits=None keeps full precision (not snapped to cents)."""
+    sim = SimulatedSource(seed=3, enable_events=False, round_digits=None)
+    seen_subcent = False
+    for _ in range(50):
+        prices = await sim.fetch_prices(["AAPL"])
+        if round(prices["AAPL"], 2) != prices["AAPL"]:
+            seen_subcent = True
+            break
+    assert seen_subcent
+
+
+@pytest.mark.asyncio
+async def test_default_prices_rounded_to_cents(sim):
+    """Default behavior snaps prices to two decimals for display."""
+    for _ in range(20):
+        prices = await sim.fetch_prices(["AAPL"])
+        assert round(prices["AAPL"], 2) == prices["AAPL"]

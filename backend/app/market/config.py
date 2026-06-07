@@ -19,8 +19,13 @@ class MarketConfig:
 
     @classmethod
     def from_env(cls) -> "MarketConfig":
+        sim_seed = os.getenv("SIM_SEED")
         return cls(
             massive_api_key=os.getenv("MASSIVE_API_KEY", "").strip(),
             massive_base_url=os.getenv("MASSIVE_BASE_URL", "https://api.polygon.io"),
             poll_interval=float(os.getenv("MASSIVE_POLL_INTERVAL", "15")),
+            tick_interval=float(os.getenv("MARKET_TICK_INTERVAL", "0.5")),
+            history_max_points=int(os.getenv("MARKET_HISTORY_MAX_POINTS", "3600")),
+            heartbeat_interval=float(os.getenv("MARKET_HEARTBEAT_INTERVAL", "15")),
+            sim_seed=int(sim_seed) if sim_seed not in (None, "") else None,
         )

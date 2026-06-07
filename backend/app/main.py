@@ -14,13 +14,15 @@ async def lifespan(app: FastAPI):
     config = MarketConfig.from_env()
     app.state.market_config = config
 
-    watched = list(DEFAULT_WATCHLIST)
+    # In-memory watchlist fallback used until the DB/persistence component is wired.
+    # Shared with the route handlers via app.state so add/remove affect streaming.
+    app.state.watchlist = list(DEFAULT_WATCHLIST)
 
     def get_watched() -> list[str]:
         db = getattr(app.state, "db", None)
         if db is not None:
             return db.list_watchlist()
-        return watched
+        return list(app.state.watchlist)
 
     source = build_market_source(config)
     market = MarketDataService(
